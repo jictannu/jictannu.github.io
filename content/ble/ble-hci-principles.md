@@ -25,28 +25,38 @@ summary: "以 HCI 指令为主线，梳理 BLE 广播、扫描、连接以及工
 
 ### 2.2 核心 HCI 指令解析
 
-#### 配置广播参数：`HCI_LE_Set_Advertising_Parameters`
+{{< hci-command name="HCI_LE_Set_Advertising_Parameters" >}}
 
-- `Advertising_Interval_Min / Max`：广播间隔最小值与最大值，单位为 0.625 ms，范围 20 ms–10.24 s。规范要求 Min ≤ Max；工程中常将二者设为相同值以获得功耗和时延确定性。Controller 会在事件之间引入 0–10 ms 的 Advertising Delay，以降低射频碰撞概率。
-- `Advertising_Type`：广播类型。
-  - `0x00 (ADV_IND)`：可连接、可扫描、不定向广播，最常见配置。
-  - `0x01 (ADV_DIRECT_IND, High Duty Cycle)`：高占空比定向广播，忽略 Min/Max；间隔小于 3.75 ms，最长持续 1.28 秒。
-  - `0x02 (ADV_SCAN_IND)`：可扫描、不可连接广播。
-  - `0x03 (ADV_NONCONN_IND)`：不可扫描、不可连接广播，常见于 iBeacon。
-  - `0x04 (ADV_DIRECT_IND, Low Duty Cycle)`：低占空比定向广播，正常使用 Min/Max。
-- `Own_Address_Type`：本机蓝牙地址类型。`0x00` 为 Public Address；`0x01` 为 Static Random Address；`0x02 / 0x03` 为 RPA，周期性更换以防跟踪，解析失败时分别回退到 Public 或 Static 地址。
-- `Peer_Address_Type / Peer_Address`：对端地址类型与 MAC 地址，仅定向广播需要配置。
-- `Advertising_Channel_Map`：广播信道掩码，通常选择 37、38、39 三个信道。
-- `Advertising_Filter_Policy`：`0x00` 允许所有设备扫描与连接；`0x01` 只允许白名单扫描；`0x02` 只允许白名单连接；`0x03` 只允许白名单扫描和连接。
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `Advertising_Interval_Min / Max` | 0.625 ms；20 ms–10.24 s | 广播事件的最小与最大间隔，Min ≤ Max | 常设为相同值以获得确定性；Controller 仍会加入 0–10 ms Advertising Delay |
+| `Advertising_Type` | `0x00 ADV_IND` | 可连接、可扫描、不定向 | 最常用通用广播 |
+| 〃 | `0x01 ADV_DIRECT_IND` | 高占空比定向广播 | 忽略 Min/Max；间隔小于 3.75 ms，最长 1.28 秒 |
+| 〃 | `0x02 ADV_SCAN_IND` | 可扫描、不可连接 | 用扫描响应补充数据 |
+| 〃 | `0x03 ADV_NONCONN_IND` | 不可扫描、不可连接 | 常见于 iBeacon |
+| 〃 | `0x04 ADV_DIRECT_IND` | 低占空比定向广播 | 正常使用 Min/Max |
+| `Own_Address_Type` | `0x00 / 0x01 / 0x02 / 0x03` | Public、Static Random、RPA | RPA 周期性更换以防跟踪；解析失败分别回退 Public 或 Static 地址 |
+| `Peer_Address_Type / Peer_Address` | 地址类型 / MAC 地址 | 定向广播的对端身份 | 仅定向广播需要 |
+| `Advertising_Channel_Map` | 37 / 38 / 39 | 广播信道掩码 | 通常全选三个信道 |
+| `Advertising_Filter_Policy` | `0x00 / 0x01 / 0x02 / 0x03` | 全部允许 / 仅白名单扫描 / 仅白名单连接 / 白名单扫描和连接 | 由白名单策略决定 |
 
-#### 配置广播数据：`HCI_LE_Set_Advertising_Data` 与 `HCI_LE_Set_Scan_Response_Data`
+{{< /hci-command >}}
 
-- 参数格式统一为 LTV（Length-Type-Value）。
-- `Advertising_Data` 与 `Scan_Response_Data` 的有效载荷长度均为 0–31 字节。
+{{< hci-command name="HCI_LE_Set_Advertising_Data / HCI_LE_Set_Scan_Response_Data" >}}
 
-#### 启动广播：`HCI_LE_Set_Advertising_Enable`
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `Advertising_Data / Scan_Response_Data` | 0–31 字节；LTV | 广播载荷与扫描响应载荷 | 广播数据支持热更新，无需关闭广播 |
 
-`0x01` 启动广播，`0x00` 关闭广播。
+{{< /hci-command >}}
+
+{{< hci-command name="HCI_LE_Set_Advertising_Enable" >}}
+
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `Advertising_Enable` | `0x01 / 0x00` | 启动 / 关闭广播 | 修改广播参数前必须先 Disable |
+
+{{< /hci-command >}}
 
 ### 2.3 工程实践与避坑指南
 
@@ -65,12 +75,33 @@ summary: "以 HCI 指令为主线，梳理 BLE 广播、扫描、连接以及工
 
 ### 3.2 核心 HCI 指令解析
 
-- `HCI_LE_Set_Scan_Parameters`
-  - `LE_Scan_Type`：`0x00` 被动扫描，只接收广播；`0x01` 主动扫描，发送 `SCAN_REQ` 获取 `SCAN_RSP`。
-  - `LE_Scan_Interval / LE_Scan_Window`：单位 0.625 ms，范围 2.5 ms–10.24 s。
-  - `Scanning_Filter_Policy`：`0x00` 接收所有广播与扫描响应；`0x01` 只接收白名单设备的包。
-- `HCI_LE_Set_Scan_Enable`：`0x01` 打开扫描，`0x00` 停止扫描；`Filter_Duplicates` 的 `0x01` 打开重复过滤，`0x00` 关闭。
-- `HCI_LE_Advertising_Report`：Controller 捕获广播后向 Host 上报，Subevent Code 固定为 `0x02`；包含 `Event_Type`、`Address_Type / Address`、`Data_Length / Data` 与 RSSI。
+{{< hci-command name="HCI_LE_Set_Scan_Parameters" >}}
+
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `LE_Scan_Type` | `0x00 / 0x01` | 被动扫描 / 主动扫描 | 主动扫描发送 `SCAN_REQ` 取得 `SCAN_RSP` |
+| `LE_Scan_Interval / Window` | 0.625 ms；2.5 ms–10.24 s | 扫描间隔与窗口 | 决定监听占空比 |
+| `Scanning_Filter_Policy` | `0x00 / 0x01` | 接收全部 / 只接收白名单设备 | 用于控制上报范围 |
+
+{{< /hci-command >}}
+
+{{< hci-command name="HCI_LE_Set_Scan_Enable" >}}
+
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `LE_Scan_Enable` | `0x01 / 0x00` | 打开 / 停止扫描 | 建立连接后自动关闭 |
+| `Filter_Duplicates` | `0x01 / 0x00` | 打开 / 关闭重复过滤 | 短期搜索开；长期监控或 Beacon 追踪关 |
+
+{{< /hci-command >}}
+
+{{< hci-command name="HCI_LE_Advertising_Report" >}}
+
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `Subevent_Code` | `0x02` | 广播数据上报事件 | Controller 捕获广播后上报 |
+| `Event_Type / Address / Data / RSSI` | 广播属性、MAC、载荷、dBm | 单个广播报告内容 | Host 用于发现、筛选与距离判断 |
+
+{{< /hci-command >}}
 
 ### 3.3 工程实践与避坑指南
 
@@ -86,11 +117,17 @@ summary: "以 HCI 指令为主线，梳理 BLE 广播、扫描、连接以及工
 
 ### 4.2 核心 HCI 指令与参数解析
 
-- `LE_Scan_Interval / Window`：连接前 Controller 扫描的间隔与窗口。
-- `Initiator_Filter_Policy`：`0x00` 只连接 `Peer_Address_Type / Peer_Address` 指定设备；`0x01` 为白名单重连，Filter Accept List 内任一设备广播均可触发连接。
-- `Connection_Interval_Min / Max`：单位 1.25 ms，范围 7.5 ms–4.0 s。
-- `Connection_Latency`：允许从机无数据时跳过若干连接事件以降低功耗。
-- `Supervision_Timeout`：单位 10 ms，范围 100 ms–32.0 s。
+{{< hci-command name="HCI_LE_Create_Connection" >}}
+
+| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
+| --- | --- | --- | --- |
+| `LE_Scan_Interval / Window` | 控制器扫描参数 | 连接前监听目标广播 | 与扫描阶段语义一致 |
+| `Initiator_Filter_Policy` | `0x00 / 0x01` | 指定地址连接 / 白名单重连 | `0x01` 忽略指定 Peer 地址 |
+| `Connection_Interval_Min / Max` | 1.25 ms；7.5 ms–4.0 s | 连接事件间隔范围 | 影响时延与功耗 |
+| `Connection_Latency` | 非负整数 | 无数据时跳过连接事件 | 用于降低从机功耗 |
+| `Supervision_Timeout` | 10 ms；100 ms–32.0 s | 连接监督超时 | 必须满足规范不等式 |
+
+{{< /hci-command >}}
 
 ### 4.3 工程实践与避坑指南
 
