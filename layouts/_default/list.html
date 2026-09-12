@@ -1,0 +1,4 @@
+{{ define "main" }}
+  <section class="section-heading"><p class="eyebrow">BLE KNOWLEDGE</p><h1>{{ .Title }}</h1><div class="section-intro">{{ .Content }}</div></section>
+  <section>{{ range .Pages.ByDate.Reverse }}<article class="post-card"><time>{{ .Date.Format "2006-01-02" }}</time><h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2><p>{{ .Summary }}</p></article>{{ else }}<p>这个栏目正在整理中。</p>{{ end }}</section>
+{{ end }}
