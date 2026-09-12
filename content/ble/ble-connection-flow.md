@@ -193,38 +193,54 @@ summary: "完整保留 HCI 参数、枚举值、边界条件与工程避坑经�
 
 ### 参数
 
-#### `LE_Scan_Interval`、`LE_Scan_Window`
+{{< param name="LE_Scan_Interval / LE_Scan_Window" >}}
 
 扫描间隔与扫描窗口。
 
-#### `Initiator_Filter_Policy`
+{{< /param >}}
+
+{{< param name="Initiator_Filter_Policy" >}}
 
 - `0x00`：连接由 `Peer_Address_Type` 与 `Peer_Address` 指定的设备。
 - `0x01`：白名单重连。只要 Filter Accept List 中任一设备广播，底层自动触发连接，忽略 `Peer_Address_Type` 和 `Peer_Address`。
 
-#### `Peer_Address_Type` 与 `Peer_Address`
+{{< /param >}}
+
+{{< param name="Peer_Address_Type / Peer_Address" >}}
 
 分别为要连接设备的地址类型和地址。
 
-#### `Own_Address_Type`
+{{< /param >}}
+
+{{< param name="Own_Address_Type" >}}
 
 与 `Peer_Address_Type` 的地址类型说明相同。
 
-#### `Connection_Interval_Min`、`Connection_Interval_Max`
+{{< /param >}}
+
+{{< param name="Connection_Interval_Min / Connection_Interval_Max" >}}
 
 连接间隔，单位 1.25 ms，范围 7.5 ms–4 s。
 
-#### `Connection_Latency`
+{{< /param >}}
+
+{{< param name="Connection_Latency" >}}
 
 从机延迟。允许从机在没有数据时连续跳过 `Connection_Latency` 次 Connection Event，多用于省电。
 
-#### `Supervision_Timeout`
+{{< /param >}}
+
+{{< param name="Supervision_Timeout" >}}
 
 连接超时时间，单位 10 ms，范围 100 ms–32.0 s。
 
-#### `Min_CE_Length`、`Max_CE_Length`
+{{< /param >}}
+
+{{< param name="Min_CE_Length / Max_CE_Length" >}}
 
 连接事件的射频窗口大小，SDK 会处理，通常不需要应用调节。
+
+{{< /param >}}
 
 ### 4.1 发起连接过程实战笔记
 
