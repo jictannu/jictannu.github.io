@@ -2,10 +2,10 @@
 title: "BLE 连接流程与 HCI 协议层原理解析及工程实践"
 date: 2026-09-12
 draft: false
-summary: "以 HCI 指令为主线，梳理 BLE 广播、扫描、连接以及工程实践。"
+summary: "不同芯片厂商的 SDK API 名称和封装层各有差异，但底层逻辑均遵循蓝牙核心规范中的 HCI 指令集。本文以 HCI 指令为主线，梳理 BLE 从广播、扫描到连接建立的全过程，并结合工程实战总结关键参数配置与常见踩坑点。"
 ---
 
-摘要：不同芯片厂商的 SDK API 名称和封装层各有差异，但底层逻辑均遵循蓝牙核心规范中的 HCI（Host Controller Interface）指令集。本文以 HCI 指令为主线，梳理 BLE 从广播、扫描到连接建立的全过程，并结合工程实战总结关键参数配置与常见踩坑点。
+不同芯片厂商的 SDK API 名称和封装层各有差异，但底层逻辑均遵循蓝牙核心规范中的 HCI（Host Controller Interface）指令集。本文以 HCI 指令为主线，梳理 BLE 从广播、扫描到连接建立的全过程，并结合工程实战总结关键参数配置与常见踩坑点。
 
 ## 1. 架构视角：为什么以 HCI 为主线？
 
@@ -13,142 +13,283 @@ summary: "以 HCI 指令为主线，梳理 BLE 广播、扫描、连接以及工
 
 ![BLE Host、HCI 与 Controller 的分层关系](/images/ble/hci-architecture.svg)
 
+*Host 与 Controller 的分层，两者通过 HCI 指令与事件通信*
+
 无论上层 SDK 封装如何变化，Host 控制 Controller 的操作本质都是下发 HCI Command；Controller 向上层上报状态或数据则通过 HCI Event。理解 HCI 层交互原理，才能跨越不同芯片平台的差异。
 
-## 2. 广播发起过程（Advertising）
+## 2. 角色
 
-广播是从机宣告自身存在、提供服务或等待连接的核心机制。根据 HCI，发起广播包含配置广播参数、配置广播数据、启动广播三个步骤。
+**从机（Peripheral）**：负责广播，被发现。
 
-### 2.1 HCI 交互时序图
+**主机（Central）**：负责扫描，发起连接。
+
+## 3. 广播发起过程
+
+根据 HCI，从机发起广播，有配置广播参数、配置广播数据、启动广播，3 个步骤。
 
 ![广播配置与启动的 HCI 时序](/images/ble/hci-advertising-sequence.svg)
 
-### 2.2 核心 HCI 指令解析
+*配置参数 → 配置数据 → 启动广播，三条 HCI 指令的时序*
 
-{{< hci-command name="HCI_LE_Set_Advertising_Parameters" >}}
+### 3.1 配置广播参数：`HCI_LE_Set_Advertising_Parameters`
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `Advertising_Interval_Min / Max` | 0.625 ms；20 ms–10.24 s | 广播事件的最小与最大间隔，Min ≤ Max | 常设为相同值以获得确定性；Controller 仍会加入 0–10 ms Advertising Delay |
-| `Advertising_Type` | `0x00 ADV_IND` | 可连接、可扫描、不定向 | 最常用通用广播 |
-| 〃 | `0x01 ADV_DIRECT_IND` | 高占空比定向广播 | 忽略 Min/Max；间隔小于 3.75 ms，最长 1.28 秒 |
-| 〃 | `0x02 ADV_SCAN_IND` | 可扫描、不可连接 | 用扫描响应补充数据 |
-| 〃 | `0x03 ADV_NONCONN_IND` | 不可扫描、不可连接 | 常见于 iBeacon |
-| 〃 | `0x04 ADV_DIRECT_IND` | 低占空比定向广播 | 正常使用 Min/Max |
-| `Own_Address_Type` | `0x00 / 0x01 / 0x02 / 0x03` | Public、Static Random、RPA | RPA 周期性更换以防跟踪；解析失败分别回退 Public 或 Static 地址 |
-| `Peer_Address_Type / Peer_Address` | 地址类型 / MAC 地址 | 定向广播的对端身份 | 仅定向广播需要 |
-| `Advertising_Channel_Map` | 37 / 38 / 39 | 广播信道掩码 | 通常全选三个信道 |
-| `Advertising_Filter_Policy` | `0x00 / 0x01 / 0x02 / 0x03` | 全部允许 / 仅白名单扫描 / 仅白名单连接 / 白名单扫描和连接 | 由白名单策略决定 |
+{{< param name="Advertising_Interval_Min" >}}
+广播间隔最小值。单位 0.625 ms，范围 20 ms ~ 10.24 s。
 
-{{< /hci-command >}}
+**常见配置：** 和 Max 一致。
+{{< /param >}}
 
-{{< hci-command name="HCI_LE_Set_Advertising_Data / HCI_LE_Set_Scan_Response_Data" >}}
+{{< param name="Advertising_Interval_Max" >}}
+广播间隔最大值。单位 0.625 ms，范围 20 ms ~ 10.24 s。
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `Advertising_Data / Scan_Response_Data` | 0–31 字节；LTV | 广播载荷与扫描响应载荷 | 广播数据支持热更新，无需关闭广播 |
+**常见配置：** 和 Min 一致。
+{{< /param >}}
 
-{{< /hci-command >}}
+{{< note title="补充说明：" >}}
+1. 核心规范要求 Min ≤ Max，且协议建议不应完全相同，以便控制器动态调整、防止射频冲突。
+2. 实际项目中出于功耗和时延确定性考量，通常设为相同值。
+3. High Duty Cycle 定向广播（`ADV_DIRECT_IND`, 0x01）会忽略配置的 Min 和 Max 间隔参数，底层由控制器以极高频率（通常间隔小于 3.75 ms）连续发送，最大持续时间为 1.28 秒。
+4. Low Duty Cycle 定向广播（`ADV_DIRECT_IND`, 0x04）则正常使用配置的 Advertising_Interval_Min 和 Advertising_Interval_Max 间隔参数。
+5. 常规广播的最小间隔为 20 ms。
+6. 广播延迟（Advertising Delay）：蓝牙控制器会在每次广播事件之间自动引入一个 0 ~ 10 ms 的伪随机延迟，以进一步降低多设备在相同广播信道上的碰撞概率。
+{{< /note >}}
 
-{{< hci-command name="HCI_LE_Set_Advertising_Enable" >}}
+{{< param name="Advertising_Type" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | `ADV_IND`，可连接可扫描不定向，最常见的配置。 |
+| `0x01` | `ADV_DIRECT_IND`，定向，High Duty Cycle，忽略 Min/Max 间隔（以小于 3.75 ms 高频连续发送），最大持续 1.28 秒。 |
+| `0x02` | `ADV_SCAN_IND`，可扫描不可连接不定向。 |
+| `0x03` | `ADV_NONCONN_IND`，不可扫描不可连接不定向，常见于 iBeacon。 |
+| `0x04` | `ADV_DIRECT_IND`，定向，Low Duty Cycle，正常使用配置的 Min/Max 广播间隔。 |
+{{< /param >}}
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `Advertising_Enable` | `0x01 / 0x00` | 启动 / 关闭广播 | 修改广播参数前必须先 Disable |
+{{< param name="Own_Address_Type" >}}
+广播设备自身使用的蓝牙地址类型：
 
-{{< /hci-command >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | `Public Device Address`，固定公开地址，全球唯一，由 IEEE 注册分配。 |
+| `0x01` | `Random Device Address`，静态随机地址（Static Random Address），上电启动后固定不变，用于替代 Public 地址。 |
+| `0x02` | `RPA`，可解析私有地址（Resolvable Private Address），周期性动态更换以防止跟踪；无法解析时回退到 Public 地址。 |
+| `0x03` | `RPA`，可解析私有地址（Resolvable Private Address），周期性动态更换以防止跟踪；无法解析时回退到 Static 地址。 |
+{{< /param >}}
 
-### 2.3 工程实践与避坑指南
+{{< note title="RPA 与回退机制（Fallback）工程实战说明：" >}}
+- **核心作用与适用的广播类型：** 防止设备被陌生人定位跟踪，通过周期性动态更换 MAC 地址保护隐私。“回退”机制主要针对定向广播（Direct Advertising）；非定向广播属于“广撒网”，不强求指定设备立刻解密，因此在发广播阶段没有地址回退需求。
+- **定向广播触发逻辑：** Controller 在发送定向广播前会先检索 Resolving List（解析列表）。若对端设备不在列表中（即未保存其 IRK 的未知设备），则自动触发回退机制，切换为固定的 Public 或 Random 地址兜底，确保对方能识别基础身份。
+- **避坑 / 边缘场景（单边取消配对）：** 若本地 Resolving List 仍保留对端信息，但手机端已清空配对关系，设备端发送定向广播时仍会使用 RPA。手机端因无法解析该 RPA 将直接忽略，导致连接超时。此时需依赖上层应用（APP/Host）检测超时并主动重置广播与绑定状态。
+{{< /note >}}
 
-- **运行中参数修改约束**：广播参数（间隔、信道等）在运行中不能直接修改；强行下发会收到 `Command Disallowed (0x0C)`，必须先 Disable，修改后再 Enable。
-- **广播数据热更新**：广播名称或传感器数据支持热更新；开启状态下直接下发，新数据会在下一个广播事件生效。
-- **RPA 与定向广播回退**：发送定向广播前，Controller 检索 Resolving List；对端未保存 IRK 时自动回退到固定地址以保障识别。若设备端仍保存对端信息、手机端已单边取消配对，手机无法解析 RPA，需由 Host 检测超时并重置广播和绑定状态。
-- **自动关闭与并发限制**：连接成功后 Controller 自动关闭广播；高占空比定向广播 1.28 秒未连接也会关闭。并发连接满载时，开启可连接广播会返回 `0x0C`；不可连接广播通常不受此限制。
+{{< param name="Peer_Address_Type" >}}
+对端的地址类型，定向广播才需要。`0x00`：Public；`0x01`：随机。
+{{< /param >}}
 
-## 3. 主机扫描过程（Scanning）
+{{< param name="Peer_Address" >}}
+对端的地址，定向广播才需要。
+{{< /param >}}
 
-主机通过扫描信道捕获从机广播包。发起扫描包含配置参数、启动扫描、广播数据上报三个步骤。
+{{< param name="Advertising_Channel_Map" >}}
+用哪个信道广播（37、38、39），常规是都使用。
+{{< /param >}}
 
-### 3.1 HCI 交互与数据上报时序图
+{{< param name="Advertising_Filter_Policy" >}}
+广播过滤政策：
+
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 所有设备都可以扫描、连接。 |
+| `0x01` | 只允许白名单扫描请求。 |
+| `0x02` | 只允许白名单连接。 |
+| `0x03` | 只允许白名单扫描请求和连接。 |
+{{< /param >}}
+
+### 3.2 配置广播数据
+
+{{< param name="HCI_LE_Set_Advertising_Data" >}}
+`Advertising_Data_Length`：长度 1 字节，参数范围 0 ~ 31。
+
+`Advertising_Data`：长度 0 ~ 31 字节，格式 LTV。
+{{< /param >}}
+
+{{< param name="HCI_LE_Set_Scan_Response_Data" >}}
+`Scan_Response_Data_Length`：长度 1 字节，参数范围 0 ~ 31。
+
+`Scan_Response_Data`：长度 0 ~ 31 字节，格式 LTV。
+{{< /param >}}
+
+### 3.3 启动广播：`HCI_LE_Set_Advertising_Enable`
+
+{{< param name="Advertising_Enable" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 关闭。 |
+| `0x01` | 启动。 |
+{{< /param >}}
+
+{{< note title="要点：" >}}
+- **广播参数（如间隔、信道等）**：运行中不能直接修改，若强行下发会收到协议返回的 `Command Disallowed (0x0C)` 错误，必须先 Disable 关闭广播再修改。
+- **广播数据（如名称、传感器数据）**：支持热更新。在广播开启状态下可直接下发新数据，底层会在下一个广播事件到来时自动生效，无需先关闭广播。
+{{< /note >}}
+
+{{< note title="自动关闭广播场景：" >}}
+- 连接成功，控制器自动关闭。
+- 高占空比定向广播超时：`ADV_DIRECT_IND` (0x01) 在持续 1.28 秒未连上后，控制器会自动超时并关闭广播。
+- 并发连接满载限制：当设备的并发连接数达到芯片最大槽位上限时，强行开启可连接广播（如 `ADV_IND`）会收到底层返回的 `Command Disallowed (0x0C)` 错误；而纯单向不可连接广播（如 `ADV_NONCONN_IND`）通常不受此限制，但需要看具体芯片。
+{{< /note >}}
+
+![广播状态与可更新内容](/images/ble/advertising-state.svg)
+
+*广播参数需先 Disable 再改，广播数据可热更新*
+
+## 4. 扫描发起过程
+
+根据 HCI，主机发起扫描，有配置扫描参数、启动扫描、广播数据上报，3 个步骤。
 
 ![主动扫描与广播上报的 HCI 时序](/images/ble/hci-scanning-sequence.svg)
 
-### 3.2 核心 HCI 指令解析
+*配置参数 → 启动扫描 → 广播数据上报，主动扫描发送 SCAN_REQ 取得 SCAN_RSP*
 
-{{< hci-command name="HCI_LE_Set_Scan_Parameters" >}}
+### 4.1 配置扫描参数：`HCI_LE_Set_Scan_Parameters`
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `LE_Scan_Type` | `0x00 / 0x01` | 被动扫描 / 主动扫描 | 主动扫描发送 `SCAN_REQ` 取得 `SCAN_RSP` |
-| `LE_Scan_Interval / Window` | 0.625 ms；2.5 ms–10.24 s | 扫描间隔与窗口 | 决定监听占空比 |
-| `Scanning_Filter_Policy` | `0x00 / 0x01` | 接收全部 / 只接收白名单设备 | 用于控制上报范围 |
+{{< param name="LE_Scan_Type" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 被动扫描，不发扫描请求。 |
+| `0x01` | 主动扫描，发扫描请求。 |
+{{< /param >}}
 
-{{< /hci-command >}}
+{{< param name="LE_Scan_Interval" >}}
+单位 0.625 ms，范围 2.5 ms ~ 10.24 s。
+{{< /param >}}
 
-{{< hci-command name="HCI_LE_Set_Scan_Enable" >}}
+{{< param name="LE_Scan_Window" >}}
+单位 0.625 ms，范围 2.5 ms ~ 10.24 s。
+{{< /param >}}
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `LE_Scan_Enable` | `0x01 / 0x00` | 打开 / 停止扫描 | 建立连接后自动关闭 |
-| `Filter_Duplicates` | `0x01 / 0x00` | 打开 / 关闭重复过滤 | 短期搜索开；长期监控或 Beacon 追踪关 |
+{{< param name="Own_Address_Type" >}}
+和广播参数的一样。
+{{< /param >}}
 
-{{< /hci-command >}}
+{{< param name="Scanning_Filter_Policy" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 接收所有的广播包、扫描响应包。 |
+| `0x01` | 只接收白名单的广播包、扫描响应包。 |
+| `0x02` | 几乎不用。 |
+| `0x03` | 几乎不用。 |
+{{< /param >}}
 
-{{< hci-command name="HCI_LE_Advertising_Report" >}}
+### 4.2 启动扫描：`HCI_LE_Set_Scan_Enable`
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `Subevent_Code` | `0x02` | 广播数据上报事件 | Controller 捕获广播后上报 |
-| `Event_Type / Address / Data / RSSI` | 广播属性、MAC、载荷、dBm | 单个广播报告内容 | Host 用于发现、筛选与距离判断 |
+{{< param name="LE_Scan_Enable" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 停止。 |
+| `0x01` | 打开。 |
+{{< /param >}}
 
-{{< /hci-command >}}
+{{< param name="Filter_Duplicates" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 关闭重复过滤。 |
+| `0x01` | 打开重复过滤。 |
+{{< /param >}}
 
-### 3.3 工程实践与避坑指南
+{{< note title="说明：" >}}
+- **重复过滤判断标准：** 广播地址 + 广播数据 + 扫描响应数据，3 者完全一样。
+- **什么时候会重新上报：** 广播地址、广播数据或扫描响应数据任意一项发生改变；底层缓存满被 LRU 淘汰清理后再次收到（长时间运行下旧设备记录被踢出后重新上报）；扫描重启（手动 Disable 后重新 Enable）。
+- **实战场景选择：** 开启 (0x01) 适用于短期搜寻并发起连接（防止重复广播刷屏，省 CPU 资源）；关闭 (0x00) 适用于长期后台扫描、连续数据监控或信标（Beacon/网关）追踪等需要抓取每一包广播的场景。
+{{< /note >}}
 
-重复过滤以广播地址、广播数据、扫描响应数据三者完全一致为判断条件。地址或数据变化、缓存满后被 LRU 淘汰、或 Disable 后重新 Enable，都会重新上报。短期搜索并连接时建议开启过滤以减少 CPU 消耗；长期后台监控或 Beacon/网关追踪时建议关闭，以取得每一个广播包。连接建立成功后扫描会自动关闭。
+{{< note title="自动关闭扫描场景：" >}}
+成功建立连接。
+{{< /note >}}
 
-## 4. 连接发起与建立过程（Connecting）
+### 4.3 广播数据上报：`HCI_LE_Advertising_Report`
 
-发起连接是从通用广播信道切换到一对一数据信道的关键环节，核心 HCI 指令为 `HCI_LE_Create_Connection`。
+{{< param >}}
+`Subevent_Code`：固定是 0x02，代表是 HCI_LE_Advertising_Report event。
 
-### 4.1 连接发起与 `T_IFS` 极速响应时序图
+`Num_Reports`：一次上报中的报告数量。底层射频芯片为提升效率，可能将同一瞬间抓到的多个广播包打包在一个 HCI 事件中批量上报。
+
+以上 2 个参数，SDK 是不会上报的。
+
+`Event_Type[i]`：第 i 个广播报告的事件类型（如可连接广播、扫描响应包等）。
+
+`Address_Type[i]` 与 `Address[i]`：第 i 个设备的蓝牙地址类型与 MAC 地址。
+
+`Data_Length[i]` 与 `Data[i]`：第 i 个广播包 / 扫描响应包的有效载荷长度与内容。
+
+`RSSI[i]`：接收信号强度指示（单位 dBm），用于判定设备距离。
+{{< /param >}}
+
+## 5. 发起连接过程
+
+核心 HCI 指令是 `HCI_LE_Create_Connection`。
 
 ![建立连接与 T_IFS 150 微秒响应](/images/ble/hci-connection-sequence.svg)
 
-### 4.2 核心 HCI 指令与参数解析
+*收到广播后，须在 T_IFS = 150 µs 内回 CONNECT_IND 切换到数据信道*
 
-{{< hci-command name="HCI_LE_Create_Connection" >}}
+### 5.1 参数
 
-| 参数 | 取值 / 范围 | 协议含义 | 工程备注 |
-| --- | --- | --- | --- |
-| `LE_Scan_Interval / Window` | 控制器扫描参数 | 连接前监听目标广播 | 与扫描阶段语义一致 |
-| `Initiator_Filter_Policy` | `0x00 / 0x01` | 指定地址连接 / 白名单重连 | `0x01` 忽略指定 Peer 地址 |
-| `Connection_Interval_Min / Max` | 1.25 ms；7.5 ms–4.0 s | 连接事件间隔范围 | 影响时延与功耗 |
-| `Connection_Latency` | 非负整数 | 无数据时跳过连接事件 | 用于降低从机功耗 |
-| `Supervision_Timeout` | 10 ms；100 ms–32.0 s | 连接监督超时 | 必须满足规范不等式 |
+{{< param name="LE_Scan_Interval" >}}
+扫描间隔。
+{{< /param >}}
 
-{{< /hci-command >}}
+{{< param name="LE_Scan_Window" >}}
+扫描窗口。
+{{< /param >}}
 
-### 4.3 工程实践与避坑指南
+{{< param name="Initiator_Filter_Policy" >}}
+| 值 | 说明 |
+| --- | --- |
+| `0x00` | 连接 `Peer_Address_Type`、`Peer_Address` 指定的设备。 |
+| `0x01` | 白名单重连：只要 Filter Accept List（白名单）中的任何设备发广播，底层就自动触发连接，`Peer_Address_Type`、`Peer_Address` 忽略。 |
+{{< /param >}}
 
-- 发起连接前必须先关闭扫描（`Scan Enable = 0x00`）。
-- Controller 听到目标广播后，必须在固定 `T_IFS = 150 µs` 的帧间间隔内回复 `CONNECT_IND`；这是射频硬件完成的过程，Host 无权干预。
-- `HCI_LE_Create_Connection` 底层没有自动超时机制。目标关机或离开范围时，Controller 会持续处于发起状态；Host 必须维护定时器（例如 5 秒），超时后下发 `HCI_LE_Create_Connection_Cancel`。
-- 成功后 Host 获得 `Connection_Handle`，后续读写依赖它。连接参数必须满足：
+{{< param name="Peer_Address_Type" >}}
+和广播的一样。
+{{< /param >}}
 
-```text
-Supervision_Timeout > (1 + Slave_Latency) × Connection_Interval_Max × 2
-```
+{{< param name="Peer_Address" >}}
+要连接的设备地址。
+{{< /param >}}
 
-## 5. BLE HCI 关键指令与事件速查表
+{{< param name="Own_Address_Type" >}}
+和 Peer_Address_Type 一样。
+{{< /param >}}
 
-| HCI 指令 / 事件 | 主要功能 | 工程注意事项 |
-| --- | --- | --- |
-| `HCI_LE_Set_Advertising_Parameters` | 配置广播间隔、类型、地址 | 广播开启时不可修改，需先 Disable |
-| `HCI_LE_Set_Advertising_Data` | 设置 31 字节 LTV 广播载荷 | 支持热更新，无需关闭广播 |
-| `HCI_LE_Set_Advertising_Enable` | 控制广播开关 | 满载时开启可连接广播会报 `0x0C` |
-| `HCI_LE_Set_Scan_Parameters` | 配置扫描类型、窗口与间隔 | 主动扫描会发送 `SCAN_REQ` |
-| `HCI_LE_Set_Scan_Enable` | 控制扫描与重复过滤 | 开关过滤影响 CPU 与上报频率 |
-| `HCI_LE_Advertising_Report` | 上报捕获到的广播包 | 包含 MAC、Data 与 RSSI |
-| `HCI_LE_Create_Connection` | 发起连接并指定目标参数 | 必须先关扫描；底层无自动超时 |
-| `HCI_LE_Create_Connection_Cancel` | 取消正在发起的连接 | 用于超时防护 |
+{{< param name="Connection_Interval_Min" >}}
+连接间隔。单位 1.25 ms，范围 7.5 ms ~ 4 s。
+{{< /param >}}
+
+{{< param name="Connection_Interval_Max" >}}
+连接间隔。单位 1.25 ms，范围 7.5 ms ~ 4 s。
+{{< /param >}}
+
+{{< param name="Connection_Latency" >}}
+Slave 延迟，允许从机在没有数据要发时，连续跳过 Connection_Latency 次 Connection Event，多数用于省功耗。
+{{< /param >}}
+
+{{< param name="Supervision_Timeout" >}}
+连接超时时间。单位 10 ms，范围 100 ms ~ 32.0 s。
+{{< /param >}}
+
+{{< param name="Min_CE_Length / Max_CE_Length" >}}
+连接事件的射频窗口大小，SDK 会搞定，不需要调。
+{{< /param >}}
+
+### 5.2 发起连接过程实战笔记
+
+{{< note >}}
+- **状态互斥：** 想发起连接，必须先关掉扫描（`Scan_Enable = 0x00`），然后才能去发起连接。
+- **抓包瞬间回包：** 听到对方广播包后，要在极短时间窗口（`T_IFS`，固定 150 微秒）内回 `CONNECT_IND` 切到数据信道。
+- **永不超时的卡死陷阱：** `HCI_LE_Create_Connection` 在底层没有自动超时机制。对方关机或跑远会导致芯片永远卡死在发起状态。必须在上层写定时器（如 5 秒），超时后主动下发 `HCI_LE_Create_Connection_Cancel` 强行取消。
+- **连接成功标志：** 成功后拿到 `Connection_Handle`（连接句柄），后续读写全靠它。
+{{< /note >}}
+
+{{< note title="核心参数大白话：" >}}
+Connection Interval（间隔）、Slave Latency（潜伏）、Supervision Timeout（监督超时，必须满足 `Timeout > (1 + Latency) × Interval_Max × 2`）。
+{{< /note >}}

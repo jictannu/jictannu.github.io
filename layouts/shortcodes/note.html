@@ -1,0 +1,4 @@
+<div class="note">
+  {{ with .Get "title" }}<strong>{{ . }}</strong>{{ end }}
+  {{ .Inner | markdownify }}
+</div>
