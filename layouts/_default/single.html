@@ -1,1 +1,15 @@
-{{ define "main" }}<div class="article-layout"><article class="post"><time>{{ .Date.Format "2006 年 1 月 2 日" }}</time><h1>{{ .Title }}</h1><div>{{ .Content }}</div></article><aside class="toc"><p>本文目录</p>{{ .TableOfContents }}</aside></div>{{ end }}
+{{ define "main" }}
+<div class="article-layout{{ if not .TableOfContents }} no-toc{{ end }}">
+  <article class="post">
+    <time>{{ .Date.Format "2006 年 1 月 2 日" }}</time>
+    <h1>{{ .Title }}</h1>
+    <div>{{ .Content }}</div>
+  </article>
+  {{ if .TableOfContents }}
+  <aside class="toc">
+    <p>本文目录</p>
+    {{ .TableOfContents }}
+  </aside>
+  {{ end }}
+</div>
+{{ end }}
