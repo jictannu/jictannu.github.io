@@ -1,10 +1,10 @@
 baseURL = 'https://jictannu.github.io/'
 locale = 'zh-TW'
-title = '我的博客'
+title = '嵌入式与 BLE 工程笔记'
 defaultContentLanguage = 'zh'
 
 [params]
-  description = '记录想法、作品与生活。'
+  description = 'BLE 与嵌入式开发实战笔记：HCI 指令、广播/扫描/连接流程、GATT 服务，以及工程踩坑经验。'
 
 [markup.goldmark.renderer]
   unsafe = true

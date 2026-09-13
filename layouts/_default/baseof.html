@@ -1,2 +1,30 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="{{ .Site.Params.description }}"><title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} · {{ .Site.Title }}{{ end }}</title>{{ $style := resources.Get "css/main.css" | minify | fingerprint }}{{ $components := resources.Get "css/components.css" | minify | fingerprint }}<link rel="stylesheet" href="{{ $style.RelPermalink }}"><link rel="stylesheet" href="{{ $components.RelPermalink }}"></head><body><header class="site-header"><a href="{{ .Site.Home.RelPermalink }}">{{ .Site.Title }}</a><span>嵌入式与 BLE 工程笔记</span><nav><a href="{{ "ble/" | relURL }}">BLE 知识</a></nav></header><main>{{ block "main" . }}{{ end }}</main><footer>© {{ now.Year }} {{ .Site.Title }} · 使用 Hugo 建立</footer></body></html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {{- $desc := .Site.Params.description -}}
+  {{- if not .IsHome -}}
+    {{- $desc = .Summary | plainify -}}
+  {{- end -}}
+  <meta name="description" content="{{ $desc }}">
+  <meta property="og:title" content="{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }}{{ end }}">
+  <meta property="og:description" content="{{ $desc }}">
+  <meta property="og:type" content="{{ if .IsHome }}website{{ else }}article{{ end }}">
+  <meta property="og:url" content="{{ .Permalink }}">
+  <meta property="og:site_name" content="{{ .Site.Title }}">
+  <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} · {{ .Site.Title }}{{ end }}</title>
+  {{ $style := resources.Get "css/main.css" | minify | fingerprint }}
+  {{ $components := resources.Get "css/components.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ $style.RelPermalink }}">
+  <link rel="stylesheet" href="{{ $components.RelPermalink }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{ .Site.Home.RelPermalink }}">{{ .Site.Title }}</a>
+    <nav><a href="{{ "ble/" | relURL }}">BLE 知识</a></nav>
+  </header>
+  <main>{{ block "main" . }}{{ end }}</main>
+  <footer>© {{ now.Year }} {{ .Site.Title }} · 使用 Hugo 建立</footer>
+</body>
+</html>
