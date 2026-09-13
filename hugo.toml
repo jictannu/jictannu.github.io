@@ -8,3 +8,6 @@ defaultContentLanguage = 'zh'
 
 [markup.goldmark.renderer]
   unsafe = true
+
+[security]
+  allowContent = ['! ^text/org$']
