@@ -1,15 +1,64 @@
 {{ define "main" }}
-<div class="article-layout{{ if not .TableOfContents }} no-toc{{ end }}">
+<div class="article-layout">
   <article class="post">
     <time>{{ .Date.Format "2006 年 1 月 2 日" }}</time>
     <h1>{{ .Title }}</h1>
-    <div>{{ .Content }}</div>
+    <div class="post-body">{{ .Content }}</div>
   </article>
-  {{ if .TableOfContents }}
-  <aside class="toc">
-    <p>本文目录</p>
-    {{ .TableOfContents }}
-  </aside>
-  {{ end }}
 </div>
+
+<div class="toc-float" id="toc-float">
+  <button class="toc-toggle" id="toc-toggle" aria-label="本文目录">目录</button>
+  <nav class="toc-panel" id="toc-panel">
+    <ul class="toc-list" id="toc-list"></ul>
+  </nav>
+</div>
+
+<script>
+(function () {
+  var body = document.querySelector('.post-body');
+  if (!body) return;
+  var headings = body.querySelectorAll('h1, h2, h3, p[class*="title"]');
+  if (headings.length === 0) return;
+
+  function levelOf(h) {
+    if (h.tagName === 'H1') return 1;
+    if (h.tagName === 'P') return 1; // p.title 视作一级章节
+    if (h.tagName === 'H2') return 2;
+    return 3;
+  }
+  var levels = Array.prototype.map.call(headings, levelOf);
+  var minLevel = Math.min.apply(null, levels);
+
+  var list = document.getElementById('toc-list');
+  var float = document.getElementById('toc-float');
+  var toggle = document.getElementById('toc-toggle');
+  var panel = document.getElementById('toc-panel');
+
+  headings.forEach(function (h, i) {
+    if (!h.id) h.id = 'sec-' + i;
+    var li = document.createElement('li');
+    li.className = 'toc-l' + (levels[i] - minLevel);
+    var a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent.trim();
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+
+  toggle.addEventListener('click', function (e) {
+    e.stopPropagation();
+    float.classList.toggle('open');
+  });
+  panel.addEventListener('click', function (e) {
+    e.stopPropagation();
+  });
+  document.addEventListener('click', function () {
+    float.classList.remove('open');
+  });
+  list.addEventListener('click', function () {
+    float.classList.remove('open');
+  });
+})();
+</script>
 {{ end }}
